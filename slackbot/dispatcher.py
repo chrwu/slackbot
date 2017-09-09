@@ -16,11 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 class MessageDispatcher(object):
-    def __init__(self, slackclient, plugins, errors_to):
+    def __init__(self, slackclient, plugins, errors_to, rc=None):
         self._client = slackclient
         self._pool = WorkerPool(self.dispatch_msg)
         self._plugins = plugins
         self._errors_to = None
+        self.rc = rc
         if errors_to:
             self._errors_to = self._client.find_channel_by_name(errors_to)
             if not self._errors_to:
@@ -31,9 +32,11 @@ class MessageDispatcher(object):
         alias_regex = ''
         if getattr(settings, 'ALIASES', None):
             logger.info('using aliases %s', settings.ALIASES)
-            alias_regex = '|(?P<alias>{})'.format('|'.join([re.escape(s) for s in settings.ALIASES.split(',')]))
+            alias_regex = '|(?P<alias>{})'.format(
+                '|'.join([re.escape(s) for s in settings.ALIASES.split(',')]))
 
-        self.AT_MESSAGE_MATCHER = re.compile(r'^(?:\<@(?P<atuser>\w+)\>:?|(?P<username>\w+):{}) ?(?P<text>.*)$'.format(alias_regex))
+        self.AT_MESSAGE_MATCHER = re.compile(
+            r'^(?:\<@(?P<atuser>\w+)\>:?|(?P<username>\w+):{}) ?(?P<text>.*)$'.format(alias_regex))
 
     def start(self):
         self._pool.start()
@@ -149,6 +152,9 @@ class MessageDispatcher(object):
                 elif event_type in ['team_join', 'user_change']:
                     user = [event['user']]
                     self._client.parse_user_data(user)
+
+            if self.rc is not None:
+                self.rc.dispatch_pkg()
             time.sleep(1)
 
     def _default_reply(self, msg):
@@ -219,7 +225,8 @@ class Message(object):
             when using a bot integration)
         """
         if in_thread:
-            self.send_webapi(text, attachments=attachments, as_user=as_user, thread_ts=self.thread_ts)
+            self.send_webapi(text, attachments=attachments,
+                             as_user=as_user, thread_ts=self.thread_ts)
         else:
             text = self.gen_reply(text)
             self.send_webapi(text, attachments=attachments, as_user=as_user)
@@ -261,7 +268,8 @@ class Message(object):
             (This function doesn't supports formatted message
             when using a bot integration)
         """
-        self._client.rtm_send_message(self._body['channel'], text, thread_ts=thread_ts)
+        self._client.rtm_send_message(
+            self._body['channel'], text, thread_ts=thread_ts)
 
     def react(self, emojiname):
         """
